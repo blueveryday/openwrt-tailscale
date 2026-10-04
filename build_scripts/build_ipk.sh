@@ -52,9 +52,10 @@ echo "Using $(/builder/go/bin/go version)"
 echo "Building Tailscale IPK package..."
 make package/tailscale/compile -j$(nproc) V=s
 
-# check package build result
-if [ -f /builder/bin/packages/${TARGET_ARCH}/base/tailscale_${PKG_VERSION}-r1_${TARGET_ARCH}.ipk ]; then
-    echo "Build Success: IPK Package generated at /builder/bin/packages/${TARGET_ARCH}/base/tailscale_${PKG_VERSION}-r1_${TARGET_ARCH}.ipk"
+# check package build result (match any -rN, PKG_RELEASE may change)
+SDK_IPK=$(ls /builder/bin/packages/${TARGET_ARCH}/base/tailscale_${PKG_VERSION}-r*_${TARGET_ARCH}.ipk 2>/dev/null | head -n1)
+if [ -n "$SDK_IPK" ]; then
+    echo "Build Success: IPK Package generated at ${SDK_IPK}"
     ls -lh /builder/bin/packages/${TARGET_ARCH}/base/
 else
     echo "Error: No build product found at expected location"
@@ -62,10 +63,11 @@ else
     exit 1
 fi
 
-# rename the generated ipk package to standard format: tailscale-${PKG_VERSION}-r1.ipk
+# rename the generated ipk package to the intermediate name expected by the release workflow
 echo "Renaming generated IPK package to standard format..."
-mv /builder/bin/packages/${TARGET_ARCH}/base/tailscale_${PKG_VERSION}-r1_${TARGET_ARCH}.ipk /builder/bin/packages/${TARGET_ARCH}/base/tailscale-${PKG_VERSION}-r1.ipk
-ls -lh /builder/bin/packages/${TARGET_ARCH}/base/tailscale-${PKG_VERSION}-r1.ipk
+PKG_RELEASE=$(basename "$SDK_IPK" | sed -E 's/^tailscale_.*-r([0-9]+)_.*\.ipk$/\1/')
+mv "$SDK_IPK" /builder/bin/packages/${TARGET_ARCH}/base/tailscale-${PKG_VERSION}-r${PKG_RELEASE}.ipk
+ls -lh /builder/bin/packages/${TARGET_ARCH}/base/tailscale-${PKG_VERSION}-r${PKG_RELEASE}.ipk
 
 cp /builder/keys/key-build.sec ./key-build
 make package/index -j$(nproc) V=s

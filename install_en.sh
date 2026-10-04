@@ -153,7 +153,10 @@ check_tailscale_install_status() {
 
     if command -v tailscale >/dev/null 2>&1; then
         local version_output
-        version_output=$(tailscale version 2>/dev/null | head -n 1 | tr -d '[:space:]')
+        version_output=$(tailscale version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' | head -n 1 | sed 's/-\([0-9][0-9]*\)$/-r\1/')
+        if [ -z "$version_output" ]; then
+            version_output=$(tailscale version 2>/dev/null | head -n 1 | tr -d '[:space:]')
+        fi
         [ -n "$version_output" ] && TAILSCALE_LOCAL_VERSION="$version_output"
     fi
 
@@ -204,7 +207,10 @@ check_tailscale_install_status() {
             IS_TAILSCALE_INSTALLED="true"
             if command -v tailscale >/dev/null 2>&1; then
                 local version_output
-                version_output=$(tailscale version 2>/dev/null | head -n 1 | tr -d '[:space:]')
+                version_output=$(tailscale version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' | head -n 1 | sed 's/-\([0-9][0-9]*\)$/-r\1/')
+                if [ -z "$version_output" ]; then
+                    version_output=$(tailscale version 2>/dev/null | head -n 1 | tr -d '[:space:]')
+                fi
                 [ -n "$version_output" ] && TAILSCALE_LOCAL_VERSION="$version_output"
             fi
         fi
@@ -283,7 +289,12 @@ get_tailscale_info() {
     fi
 
     TAILSCALE_LATEST_VERSION="$version"
-    TAILSCALE_FILE="tailscale-${TAILSCALE_LATEST_VERSION}-r1"
+    # package files are named tailscale-<version>-r<release> (e.g. tailscale-1.102.4-r2);
+    # fall back to r1 for older feeds whose version file carries no release suffix
+    case "$TAILSCALE_LATEST_VERSION" in
+        *-r*) TAILSCALE_FILE="tailscale-${TAILSCALE_LATEST_VERSION}" ;;
+        *)    TAILSCALE_FILE="tailscale-${TAILSCALE_LATEST_VERSION}-r1" ;;
+    esac
     TAILSCALE_FILE_SIZE=$((file_size / 1024 / 1024))
 
     if [ "$DEVICE_STORAGE_AVAILABLE" -gt "$TAILSCALE_FILE_SIZE" ]; then
@@ -577,10 +588,8 @@ persistent_install() {
     for install_attempt in $install_attempt_range; do
         echo "[INFO]: Installation attempt $install_attempt/3"
         if [ "$PACKAGE_MANAGER" = "opkg" ]; then
-            echo "[INFO]: Removing old tailscale package..."
-            opkg remove tailscale 2>/dev/null || true
-            echo "[INFO]: Installing tailscale IPK package..."
-            if opkg install /tmp/$TAILSCALE_FILE.ipk; then
+            echo "[INFO]: Installing/updating tailscale IPK package..."
+            if opkg install --force-reinstall /tmp/$TAILSCALE_FILE.ipk; then
                 install_success=true
                 echo "[INFO]: IPK package installation successful"
                 rm -f "/tmp/$TAILSCALE_FILE.ipk" "/tmp/$TAILSCALE_FILE.sha256"
@@ -589,10 +598,8 @@ persistent_install() {
                 echo "[INFO]: IPK package installation failed, preparing to retry..."
             fi
         elif [ "$PACKAGE_MANAGER" = "apk" ]; then
-            echo "[INFO]: Removing old tailscale package..."
-            apk del tailscale 2>/dev/null || true
-            echo "[INFO]: Installing tailscale APK package..."
-            if apk add --allow-untrusted /tmp/$TAILSCALE_FILE.apk; then
+            echo "[INFO]: Installing/updating tailscale APK package..."
+            if apk add --allow-untrusted --force-overwrite /tmp/$TAILSCALE_FILE.apk; then
                 install_success=true
                 echo "[INFO]: APK package installation successful"
                 rm -f "/tmp/$TAILSCALE_FILE.apk" "/tmp/$TAILSCALE_FILE.sha256"
